@@ -1,0 +1,54 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+ENV/
+.env
+.venv*/
+
+# ---- Secrets / credentials ----
+.env
+.env.*
+*.secret
+*.secrets
+secrets.*
+*.pem
+*.key
+
+# ---- Datasets (do NOT commit) ----
+data/
+MNIST/
+cifar-10-batches-py/
+cifar*/
+CIFAR*/
+*.gz
+*.tar.gz
+
+# ---- Model checkpoints ----
+*.pt
+*.pth
+*.ckpt
+
+# ---- Large result dumps ----
+# The small results/*.npy metric dumps that back the paper are kept (not matched
+# below). Ignore bulkier / regenerable dump formats here.
+*.npz
+*.h5
+*.hdf5
+results_full/
+*.log
+
+# ---- IDE / OS ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
