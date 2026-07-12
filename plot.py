@@ -1,7 +1,7 @@
 """
 plot.py
 -------
-Produces one clean 1×3 multi-panel figure across all three failure conditions.
+Produces one clean 2×2 multi-panel figure across all four failure conditions.
 Mean ± std band shown across runs.
 
 Usage:

@@ -217,6 +217,43 @@ def build_condition(condition: str, run: int):
         test_ds    = base_test          # balanced test set → accuracy looks fine overall
         model      = SimpleCNN(in_channels=3)
 
+    # ---- clean-training controls -------------------------------------------
+    # One uncorrupted reference per failure condition, matching its exact data
+    # pipeline, so failure-run trajectories can be compared against a
+    # clean-reference band (see evaluate_ref.py):
+    #   clean_mnist     -> reference for label_noise      (normalized MNIST, CNN)
+    #   clean_cifar_raw -> reference for spurious         (unnormalized CIFAR, CNN)
+    #   clean_cifar     -> reference for class_imbalance  (normalized CIFAR, CNN)
+    #   clean_resnet    -> reference for dist_shift       (normalized CIFAR, ResNet-18)
+
+    elif condition == "clean_mnist":
+        tf = T.Compose([T.ToTensor(), T.Normalize((0.1307,), (0.3081,))])
+        train_ds = torchvision.datasets.MNIST("data", train=True,  download=True, transform=tf)
+        test_ds  = torchvision.datasets.MNIST("data", train=False, download=True, transform=tf)
+        model    = SimpleCNN(in_channels=1)
+
+    elif condition == "clean_cifar_raw":
+        tf = T.Compose([T.ToTensor()])
+        train_ds = torchvision.datasets.CIFAR10("data", train=True,  download=True, transform=tf)
+        test_ds  = torchvision.datasets.CIFAR10("data", train=False, download=True, transform=tf)
+        model    = SimpleCNN(in_channels=3)
+
+    elif condition == "clean_cifar":
+        tf = T.Compose([T.ToTensor(),
+                        T.Normalize((0.4914, 0.4822, 0.4465),
+                                    (0.2470, 0.2435, 0.2616))])
+        train_ds = torchvision.datasets.CIFAR10("data", train=True,  download=True, transform=tf)
+        test_ds  = torchvision.datasets.CIFAR10("data", train=False, download=True, transform=tf)
+        model    = SimpleCNN(in_channels=3)
+
+    elif condition == "clean_resnet":
+        tf = T.Compose([T.ToTensor(),
+                        T.Normalize((0.4914, 0.4822, 0.4465),
+                                    (0.2470, 0.2435, 0.2616))])
+        train_ds = torchvision.datasets.CIFAR10("data", train=True,  download=True, transform=tf)
+        test_ds  = torchvision.datasets.CIFAR10("data", train=False, download=True, transform=tf)
+        model    = ResNet18Wrapper()
+
     else:
         raise ValueError(f"Unknown condition: {condition}")
 
@@ -326,7 +363,8 @@ def train_one_run(condition: str, epochs: int, run: int, out_dir: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--condition", required=True,
-                        choices=["label_noise", "spurious", "dist_shift", "class_imbalance"])
+                        choices=["label_noise", "spurious", "dist_shift", "class_imbalance",
+                                 "clean_mnist", "clean_cifar_raw", "clean_cifar", "clean_resnet"])
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--runs",   type=int, default=5)
     parser.add_argument("--out",    type=str, default="results")

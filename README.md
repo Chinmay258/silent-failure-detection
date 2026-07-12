@@ -48,7 +48,7 @@ First-change epoch (mean ± std over 5 runs). Lower = reacted sooner. **Δ** = g
 - **Label noise is where geometry shines.** Effective rank crossed the detection threshold ~8.6 epochs before accuracy did — a large, consistent early-warning window.
 - **Confidence can actively mislead.** Under spurious features, softmax confidence kept *rising* throughout training even as the model grew more dependent on a colour patch that vanishes at test time.
 - **Honest nulls.** Under distribution shift and class imbalance, every signal fired at epoch 1 — geometry offered no timing advantage. We report this as directly as the positive results.
-- **Effective rank > dispersion** as a monitoring signal: lower run-to-run variance across all four conditions.
+- **Effective rank > dispersion** as a monitoring signal: lower run-to-run variance in three of the four conditions (dispersion was the steadier signal under spurious features).
 
 **Takeaway:** geometry monitoring is not a universal upgrade. Its value is specifically tied to whether representational degradation is *gradual* (where effective rank gives real lead time) or *abrupt* (where nothing beats accuracy).
 

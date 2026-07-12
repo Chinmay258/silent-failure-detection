@@ -1,10 +1,10 @@
 """
 run.py
 ------
-Single entry point. Trains all three conditions, evaluates, and plots.
+Single entry point. Trains all four failure conditions, evaluates, and plots.
 
 Usage:
-    python run.py                          # defaults: 10 epochs, 5 runs
+    python run.py                          # defaults: 20 epochs, 5 runs
     python run.py --epochs 15 --runs 3    # custom
     python run.py --condition label_noise  # single condition only
 """
