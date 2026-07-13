@@ -63,6 +63,21 @@ def false_alarm_rate(clean_runs, key, k):
     return fired / len(clean_runs)
 
 
+def calibrated_k(clean_runs, key, horizon):
+    """
+    Smallest threshold with zero false alarms on the clean runs themselves:
+    the worst leave-one-out excursion (in sigma units) any clean run makes
+    from the band of the others, over the whole horizon.
+    """
+    worst = []
+    for i in range(len(clean_runs)):
+        rest = [m for j, m in enumerate(clean_runs) if j != i]
+        mu, sd = band(rest, key)
+        x = np.asarray(clean_runs[i][key][:horizon], dtype=np.float64)
+        worst.append(np.max(np.abs((x - mu[:horizon]) / sd[:horizon])))
+    return float(max(worst))
+
+
 def fmt_detect(epochs, horizon):
     fired = [e for e in epochs if e is not None]
     n = len(epochs)
@@ -114,6 +129,22 @@ def main():
             print(f"  {METRIC_LABELS[key]:<15} {fmt_detect(det2, horizon):>20} {fa2:>7.2f} "
                   f"{fmt_detect(det3, horizon):>20} {fa3:>7.2f} "
                   f"{z[:, 0].mean():>9.1f} {z.max(axis=1).mean():>9.1f}")
+
+        print(f"\n  calibrated: threshold k* = worst clean leave-one-out excursion "
+              f"(zero false alarms by construction)")
+        header2 = (f"  {'Signal':<15} {'k*':>7} {'detect@k*':>22} "
+                   f"{'margin = max|z|/k*':>20}")
+        print(header2)
+        print("  " + "-" * (len(header2) - 2))
+        for key in METRICS:
+            mu, sd = band(clean_runs, key)
+            ks = calibrated_k(clean_runs, key, horizon)
+            detk = [detect(m[key], mu, sd, ks) for m in fail_runs]
+            z = np.array([np.abs((np.asarray(m[key][:horizon]) - mu[:horizon]) / sd[:horizon])
+                          for m in fail_runs])
+            margin = (z.max(axis=1) / ks).mean()
+            print(f"  {METRIC_LABELS[key]:<15} {ks:>7.1f} {fmt_detect(detk, horizon):>22} "
+                  f"{margin:>20.1f}")
 
     print("\nNotes: FA = leave-one-out false-alarm rate on clean runs (lower is better;")
     print("a detector is only meaningful alongside it). |z| ep1 = deviation from the")
