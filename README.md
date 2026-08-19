@@ -1,143 +1,188 @@
 # Silent Failure Detection in Deep Neural Networks
 
-**Penultimate-layer embedding geometry — dispersion and effective rank — as a training-time monitoring signal.**
+**Label-free detection of silent model failure from penultimate-layer embedding geometry.**
 
-Chinmay Singh, Amreen Ayesha · Manipal Institute of Technology Bengaluru (MAHE)
-
-📄 Paper: [`Silent_Failure_Detection.pdf`](./Silent_Failure_Detection.pdf) *(in this repo)*
+Chinmay Singh · Manipal Institute of Technology Bengaluru (MAHE)
 
 ---
 
 ## Overview
 
-A neural network can fail **silently**: its accuracy and softmax confidence stay high while its internal representations quietly degrade. By the time output metrics react, the damage is already done. This project asks a simple question:
+A model can fail **silently**: validation accuracy and softmax confidence look healthy while the
+model served in production is badly degraded. This project asks whether the **geometry of a
+model's internal representations**, computed on *unlabeled* incoming data, can catch that.
 
-> Can the **geometry of learned representations** warn us that something is wrong *before* accuracy does?
+The headline result, on CIFAR-10 / ResNet-18 under input drift:
 
-The answer we found is **"sometimes" — and we report exactly when it does and when it doesn't.**
+| Measured on | Accuracy |
+|---|---|
+| Clean validation stream | **74.2%** |
+| The drifted stream the model actually serves | **39.9%** |
 
-We track two scalar metrics on the penultimate-layer embeddings after every training epoch. Both are **training-free** and **gradient-free** — they require no change to the training procedure and no access to gradients:
+A **34-point collapse that validation accuracy cannot see at all.** Embedding dispersion,
+computed without labels on the incoming stream, separates from the clean reference **2.8×**
+more strongly than the standard softmax-confidence OOD baseline.
 
-- **Embedding dispersion** — the average distance of embeddings from their centroid (how spread out the representations are).
-- **Effective rank** — `exp(` Shannon entropy of the normalized singular values `)` — how many dimensions meaningfully contribute to the representation.
+## This project corrected itself — read this part
+
+The first version of this work reported that effective rank detected label-noise failure
+**8.6 epochs before accuracy**. That result does not survive its own control, and the repo now
+documents why.
+
+The original detector flagged failure at the first epoch a normalized signal moved more than
+τ = 0.1 from its starting value. Nobody had asked what that detector does on a **healthy**
+training run. It fires there too — within the first two epochs, on every signal, across all four
+clean configurations (40 control runs). "Moved early" never meant "detected something"; it
+measured ordinary warm-up dynamics. The normalization also used the whole run's min/max, so the
+rule needed information from epoch 20 to fire at epoch 2 — not computable online.
+
+**What replaced it.** Detection is now measured against **clean-reference bands**: train clean
+control runs with an identical pipeline, form a per-epoch mean/std band, and flag a monitored run
+when its z-score exceeds a threshold `k*` calibrated as the worst leave-one-out excursion the
+clean runs themselves make — the smallest threshold with zero false alarms on the reference set.
+Every detection is reported alongside its false-alarm rate. Out-of-sample: **1 false alarm across
+200 held-out clean epochs** (from effective rank; dispersion: zero).
+
+Under that protocol, two of the original conclusions inverted:
+
+- **Dispersion, not effective rank, is the dependable signal.** Effective rank's separation
+  *decays* over training (22.6% at epoch 1 → 2.2% by epoch 20) and it produced the only
+  out-of-sample false alarm. The original "effective rank is more reliable" claim is retracted.
+- **Most of these failures are not silent.** Once any clean reference exists, label noise,
+  spurious correlations, and class imbalance are all caught at least as fast by accuracy or by the
+  training loss. Geometry's real value is not speed — it is **coverage** of the one failure class
+  output metrics structurally cannot see: drift in the unlabeled input stream.
 
 ## Failure conditions studied
 
 | Condition | Dataset | Architecture | What it simulates |
 |---|---|---|---|
 | Label noise | MNIST | CNN | 30% of training labels randomly corrupted |
-| Spurious features | CIFAR-10 | CNN | A class-correlated colour patch present in 90% of train images, removed at test |
-| Distribution shift | CIFAR-10 | ResNet-18 | Gaussian noise (σ = 0.1) added at evaluation |
+| Spurious features | CIFAR-10 | CNN | Class-correlated colour patch in 90% of train images, removed at test |
+| Distribution shift | CIFAR-10 | ResNet-18 | Input corruption applied to the monitored stream |
 | Class imbalance | CIFAR-10 | CNN | Two classes make up 90% of training data |
 
-All models trained for 20 epochs (Adam, lr 1e-3, batch 256), **5 independent seeds per condition**, no early stopping, no geometry-aware regularization.
+Each condition has a **clean-training control** with an identical data pipeline and architecture
+(10 seeds), and a **mid-training onset** variant where the corruption switches on after epoch 10
+so detection delay is measured against a known onset. 20 epochs, Adam lr 1e-3, batch 256.
+**80+ training runs total**, all committed.
 
 ## Results
 
-First-change epoch (mean ± std over 5 runs). Lower = reacted sooner. **Δ** = geometry's lead over accuracy in epochs; positive means geometry fired first.
+Calibrated reference-band detection (thresholds with zero false alarms on the reference set):
 
-| Condition | Accuracy | Confidence | Dispersion | Effective Rank | ΔDisp | ΔERank |
-|---|---|---|---|---|---|---|
-| Label Noise (MNIST) | 10.4 ± 0.49 | 1.2 ± 0.40 | 7.2 ± 1.94 | 1.8 ± 0.40 | **+3.2** | **+8.6** |
-| Spurious Features (CIFAR-10) | 1.2 ± 0.40 | 1.6 ± 0.80 | 1.0 ± 0.00 | 2.6 ± 0.49 | +0.2 | −1.4 |
-| Distribution Shift (ResNet-18) | 1.0 ± 0.00 | 1.0 ± 0.00 | 1.4 ± 0.80 | 1.0 ± 0.00 | −0.4 | 0.0 |
-| Class Imbalance (CIFAR-10) | 1.0 ± 0.00 | 1.2 ± 0.40 | 2.6 ± 0.49 | 1.0 ± 0.00 | −1.6 | 0.0 |
+| Condition | From scratch | Onset delay (corruption at epoch 10) |
+|---|---|---|
+| Label noise | Conf/Disp: ep 1 · ERank: 2.4 · Acc: 6.4 | Conf/Disp: 1 ep · Acc: 1.8 · train loss ×200 |
+| Spurious features | Acc: ep 1 (3.0×) · ERank: ep 1 (1.2×) | Conf: 8.0 · Disp: 7.4 · Acc/ERank: never |
+| Class imbalance | Acc: ep 1 (6.9×) | none within 10 epochs (train loss *improves*) |
+| **Distribution shift** | **Disp: ep 2 (5.6×) · Acc/Conf: never** | **Disp: 1.0 ± 0.0 · Acc/Conf: never** |
 
-### Key findings
+Same-stream comparison under drift (all signals computed on the *same* unlabeled drifted data,
+3 seeds):
 
-- **Label noise is where geometry shines.** Effective rank crossed the detection threshold ~8.6 epochs before accuracy did — a large, consistent early-warning window.
-- **Confidence can actively mislead.** Under spurious features, softmax confidence kept *rising* throughout training even as the model grew more dependent on a colour patch that vanishes at test time.
-- **Honest nulls.** Under distribution shift and class imbalance, every signal fired at epoch 1 — geometry offered no timing advantage. We report this as directly as the positive results.
-- **Effective rank > dispersion** as a monitoring signal: lower run-to-run variance in three of the four conditions (dispersion was the steadier signal under spurious features).
+| Signal | Relative separation from clean |
+|---|---|
+| Embedding dispersion | **37.6%** |
+| Softmax confidence (Hendrycks & Gimpel baseline) | 13.2% |
+| Effective rank | 22.6% at epoch 1 → 2.2% by epoch 20 |
 
-**Takeaway:** geometry monitoring is not a universal upgrade. Its value is specifically tied to whether representational degradation is *gradual* (where effective rank gives real lead time) or *abrupt* (where nothing beats accuracy).
+## Known issues / work in progress
 
-## Method notes
+This is an honest snapshot of a project mid-revision, not a finished paper.
 
-- **Lead-time metric.** For a normalized signal `s(t)`, the first-change epoch is the smallest `t > 0` with `|s(t) − s(0)| > τ`, where `τ = 0.1`, fixed across all conditions. Lead `Δ = t_accuracy − t_geometry`.
-- No metric requires gradient access or modifies training; both are computed from the embedding matrix `Z ∈ ℝ^(N×d)` at each epoch.
+- **The `dist_shift` corruption is stronger than its description.** `add_gaussian_noise` applies
+  `.clamp(0, 1)` to *normalized* inputs (range ≈ [-2, 2.1]), so it zeroes ~52% of every image
+  rather than adding mild σ = 0.1 noise. The blindness of validation accuracy to it is real, but
+  the corruption must be re-implemented and re-described before publication.
+- **A trivial baseline is untested.** Per-image pixel std separates clean from drifted data almost
+  perfectly here, so a model-free detector would also work on this corruption. A corruption
+  benchmark where that is not true (e.g. CIFAR-10-C) is the right next experiment.
+- Mahalanobis and energy-based OOD baselines are cited but not yet compared against.
+- Failure conditions use 5 seeds against 10-seed references.
+- The paper PDF in this repo is the **superseded v1** and still contains the retracted claim.
 
 ## Repository structure
 
 ```
 .
 ├── README.md
-├── Silent_Failure_Detection.pdf   # the paper (preprint)
-├── requirements.txt               # torch, torchvision, numpy, matplotlib
-├── run.py                         # single entry point: train → evaluate → plot
-├── train.py                       # training engine, models, and the 4 failure conditions
-├── geometry.py                    # dispersion() and effective_rank() metrics
-├── evaluate.py                    # lead-time analysis; prints the results table
-├── plot.py                        # renders the 2×2 signal-trajectory figure
-├── results/                       # saved per-run metrics backing the paper
-│   ├── label_noise/run{0..4}/metrics.npy
-│   ├── spurious/run{0..4}/metrics.npy
-│   ├── dist_shift/run{0..4}/metrics.npy
-│   └── class_imbalance/run{0..4}/metrics.npy
+├── Silent_Failure_Detection.pdf   # v1 preprint (superseded — see Known issues)
+├── requirements.txt
+├── run.py                         # entry point: train → evaluate → plot
+├── train.py                       # training engine, models, failure + clean-control conditions
+├── geometry.py                    # dispersion, effective rank, class-conditional variants
+├── evaluate.py                    # v1 first-change analysis (kept as a cautionary ablation)
+├── evaluate_ref.py                # reference-band detection + calibrated zero-false-alarm k*
+├── evaluate_onset.py              # detection delay after a mid-training onset
+├── plot.py / plot_ref.py / plot_onset.py
+├── results/                       # 80+ runs: failures, clean controls, onset variants
 └── figures/
-    └── main_results.png           # the headline 2×2 figure
 ```
-
-Datasets (MNIST / CIFAR-10) download on demand into `data/` and are **not** committed.
 
 ## Installation
 
-Requires Python 3.11+. A CUDA-capable GPU is recommended for training but not
-required (the analysis/plotting scripts run on CPU).
+Requires Python 3.11+. A CUDA-capable GPU is recommended for training; the analysis and plotting
+scripts run on CPU.
 
 ```bash
 git clone https://github.com/Chinmay258/silent-failure-detection.git
 cd silent-failure-detection
-python -m venv .venv && source .venv/bin/activate   # on Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-`run.py` is the single entry point — it trains, evaluates, and plots in one shot.
-Datasets are downloaded automatically on first run.
+The repo ships with all saved runs, so every table above reproduces **without retraining**:
 
 ```bash
-# Full pipeline: all 4 conditions, 5 seeds × 20 epochs (defaults)
+python evaluate_ref.py --results results
+```
+
+```bash
+python evaluate_onset.py --results results --onset 10
+```
+
+```bash
+python plot_ref.py --results results --out figures
+```
+
+To retrain from scratch (datasets download on demand):
+
+```bash
 python run.py
-
-# Custom epochs / seeds
-python run.py --epochs 15 --runs 3
-
-# A single condition (label_noise | spurious | dist_shift | class_imbalance)
-python run.py --condition label_noise
 ```
 
-The repo ships with the saved `results/` from the paper, so you can reproduce the
-table and figure **without retraining**:
-
 ```bash
-python run.py --skip-train          # evaluate + plot from existing results/
-# or run the stages directly:
-python evaluate.py --results results          # prints the lead-time table
-python plot.py --results results --out figures # writes figures/main_results.png
+python train.py --condition clean_resnet --epochs 20 --runs 10
 ```
 
-Individual training runs can also be launched directly:
-
 ```bash
-python train.py --condition label_noise --epochs 20 --runs 5 --out results
+python train.py --condition dist_shift --epochs 20 --runs 5 --onset 10
 ```
 
 ## Limitations
 
-- Experiments are limited to image classification on MNIST and CIFAR-10, chosen for fast, reproducible training; behaviour at larger scale (bigger models, longer runs) remains open.
-- The threshold `τ = 0.1` was fixed for convenience; principled threshold selection is future work.
-- These metrics are a **monitoring** tool, not a **diagnostic** one — they tell you *something* changed, not *what* or *why*.
+- Image classification on MNIST and CIFAR-10 only; behaviour at larger scale is open.
+- Detection requires clean reference runs. Reference-free online change-point detection is future
+  work.
+- These metrics are a **monitoring** tool, not a **diagnostic** one — they tell you *something*
+  changed, not *what* or *why*.
 
 ## Citation
 
 ```bibtex
 @misc{singh_silent_failure_2026,
-  title  = {Silent Failure Detection in Deep Neural Networks using Penultimate-Layer
-            Embedding Geometry: Dispersion and Effective Rank as Training-Time Monitoring Signals},
-  author = {Singh, Chinmay and Ayesha, Amreen},
+  title  = {Silent Failure Under Input Drift: Label-Free Detection Using
+            Penultimate-Layer Embedding Dispersion},
+  author = {Singh, Chinmay},
   year   = {2026},
-  note   = {Preprint}
+  note   = {Preprint in preparation},
+  url    = {https://github.com/Chinmay258/silent-failure-detection}
 }
 ```
+
+## Acknowledgments
+
+Thanks to Prof. Amreen Ayesha for supporting this project.
