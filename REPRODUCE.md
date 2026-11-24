@@ -126,8 +126,19 @@ python train.py --condition class_imbalance --epochs 20 --runs 5 --onset 10
 corrupted stream — the comparison `train.py` does not make):
 
 ```bash
-python analysis/fair_baseline_v2.py
+python analysis/fair_baseline_v2.py                # all three seeds
+python analysis/fair_baseline_v2.py --seeds 42     # resume a single seed
+python analysis/fair_baseline_v2.py --summary-only # re-print the summary
 ```
+
+Seeds already on disk are skipped, and the summary is computed from whatever
+seed files exist, so a partial sweep still reports. Run seeds one at a time on
+a memory-tight machine: `effective_rank` takes a full float64 SVD of a
+10,000 × 512 matrix and keeps the singular vectors, and running all three seeds
+in one process accumulates that. This sweep was in fact interrupted once by a
+host-RAM allocation failure inside `np.linalg.svd` — note that this is *system*
+RAM, not VRAM, and that a nearly full disk makes it worse because Windows
+cannot grow the pagefile.
 
 ### Measured cost
 

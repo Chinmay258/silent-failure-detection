@@ -7,7 +7,7 @@ from anywhere, it resolves the repository root from its own path.
 
 | Script | What it answers | Needs |
 |---|---|---|
-| `fair_baseline_v2.py` | Does the corruption actually hurt, and does the label-free baseline detect it too? | GPU, ~40 min |
+| `fair_baseline_v2.py` | Does the corruption actually hurt, and does the label-free baseline detect it too? | GPU, ~12 min/seed |
 | `verify_claims.py` | Do the committed runs support the claims made about them? | `results/`, `data/` |
 | `card_numbers.py` | Every headline figure, recomputed from `results/` | `results/` |
 | `bench_geometry.py` | What do the geometry metrics cost as embeddings scale? | CPU, ~5 min |
@@ -28,20 +28,45 @@ signal on **both** streams each epoch, plus per-sample OOD AUROC at epochs 1
 and 20 for max softmax probability and for distance to the clean-embedding
 centroid.
 
-Findings (3 seeds):
+Findings (seeds 0 / 42 / 84, epoch 20 unless stated):
 
-- Validation accuracy stays at ~74% while accuracy on the corrupted stream is
+| Measurement | Value |
+|---|---|
+| Accuracy, clean validation stream | 0.748 ± 0.007 |
+| Accuracy, corrupted stream | 0.386 ± 0.014 |
+| **Hidden gap** | **36.3 ± 1.9 points** |
+| Mean relative separation — dispersion | 37.4% ± 2.5 |
+| Mean relative separation — confidence | 13.0% ± 0.2 |
+| Mean relative separation — effective rank | 6.0% ± 1.1 (24.3% at epoch 1 → 3.6% at epoch 20) |
+| dispersion / confidence ratio | 2.89 ± 0.22 |
+| Per-sample AUROC — max softmax probability | 0.694 ± 0.002 |
+| Per-sample AUROC — distance to clean centroid | 0.244 ± 0.039 (two-sided 0.756) |
+
+Reading them:
+
+- Validation accuracy stays at ~75% while accuracy on the corrupted stream is
   ~39%. The damage is real and large, and the clean-test metric is blind to it.
 - Max softmax probability on the corrupted stream **does** separate. Mean
-  dispersion shifts ~3× more than mean confidence, but per-sample AUROC is
-  0.70 for confidence against 0.76 for centroid distance — a much narrower gap,
-  and the direction of the centroid-distance score has to be chosen after
-  seeing the data.
+  dispersion shifts ~2.9× more than mean confidence, but per-sample AUROC is
+  0.69 for confidence against 0.76 for centroid distance — a much narrower gap.
+  Note the raw centroid-distance AUROC is 0.24, i.e. corrupted embeddings sit
+  *closer* to the clean centroid; the score only beats confidence once its
+  direction is flipped, and that direction was chosen after seeing the data.
+- Effective rank separates early and then stops: 24.3% at epoch 1 decaying to
+  3.6% by epoch 20. That decay is why it was demoted from the headline signal.
 - The per-image pixel-std detector in `verify_claims.py` §10 reaches AUROC
   0.986 on the same corruption, with no model at all.
 
 Together these say: the blindness of validation accuracy is the solid result;
 "only geometry reacts" is not.
+
+Seeds are written one file at a time and already-present seeds are skipped, so
+`--seeds 42` resumes an interrupted sweep. This matters in practice:
+`effective_rank` takes a full float64 SVD of the 10,000 × 512 embedding matrix
+and retains the singular vectors, so peak **host** RAM — not VRAM — is the
+binding constraint, and running all three seeds in one process accumulates it.
+A run of this script died in `np.linalg.svd` unable to allocate 39 MiB while
+the machine's disk was 95% full and the pagefile could not grow.
 
 ## `verify_claims.py` — the verification suite
 

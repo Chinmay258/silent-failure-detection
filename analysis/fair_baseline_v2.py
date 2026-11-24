@@ -23,12 +23,23 @@ distance to the clean-embedding centroid (the per-sample analogue of
 dispersion), because a ratio of batch averages is not how an OOD baseline is
 normally scored.
 
-Writes results/fair_baseline_v2/seed<N>.npy.
+Writes results/fair_baseline_v2/seed<N>.npy, one file per seed, written at the
+end of that seed. Seeds are independent, so an interrupted sweep is resumed by
+rerunning only the missing ones.
+
+Peak host memory matters here: effective_rank() takes a full SVD of a
+10,000 x 512 matrix in float64 and keeps the singular vectors, so a seed needs
+a few hundred MB of RAM on top of the GPU-resident dataset. Running every seed
+in one process accumulates that; on a memory-tight machine run them one at a
+time.
 
 Usage:
-    python analysis/fair_baseline_v2.py
+    python analysis/fair_baseline_v2.py                # all three seeds
+    python analysis/fair_baseline_v2.py --seeds 42     # just one (resume)
+    python analysis/fair_baseline_v2.py --summary-only # re-print the summary
 """
 
+import argparse
 import os
 import random
 import sys
@@ -161,7 +172,25 @@ def summarize(ms):
 
 
 if __name__ == "__main__":
-    Xtr, Ytr = load_split(True)
-    Xte, Yte = load_split(False)
-    summarize([run(s, Xtr, Ytr, Xte, Yte) for s in (0, 42, 84)])
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 42, 84])
+    ap.add_argument("--summary-only", action="store_true")
+    args = ap.parse_args()
+
+    if not args.summary_only:
+        todo = [s for s in args.seeds if not (OUT / f"seed{s}.npy").exists()]
+        for s in args.seeds:
+            if s not in todo:
+                print(f"seed {s}: already present, skipping", flush=True)
+        if todo:
+            Xtr, Ytr = load_split(True)
+            Xte, Yte = load_split(False)
+            for s in todo:
+                run(s, Xtr, Ytr, Xte, Yte)
+
+    # summarize from whatever is on disk, so partial sweeps still report
+    files = sorted(OUT.glob("seed*.npy"), key=lambda p: int(p.stem[4:]))
+    if files:
+        print(f"\nseeds on disk: {[f.stem for f in files]}")
+        summarize([np.load(f, allow_pickle=True).item() for f in files])
     print("FAIR BASELINE V2 DONE", flush=True)
