@@ -95,9 +95,16 @@ This is an honest snapshot of a project mid-revision, not a finished paper.
   `.clamp(0, 1)` to *normalized* inputs (range ≈ [-2, 2.1]), so it zeroes ~52% of every image
   rather than adding mild σ = 0.1 noise. The blindness of validation accuracy to it is real, but
   the corruption must be re-implemented and re-described before publication.
-- **A trivial baseline is untested.** Per-image pixel std separates clean from drifted data almost
-  perfectly here, so a model-free detector would also work on this corruption. A corruption
-  benchmark where that is not true (e.g. CIFAR-10-C) is the right next experiment.
+- **A model-free baseline also works on this corruption.** Per-image pixel standard deviation
+  separates clean from corrupted data at AUROC 0.986 with no model at all
+  (`analysis/verify_claims.py` §10), so this corruption does not establish that a model-aware
+  signal is needed. A benchmark where that is not true (e.g. CIFAR-10-C) is the right next
+  experiment.
+- **"Only geometry reacts" does not survive a like-for-like comparison.** Measured on the *same*
+  corrupted stream (`analysis/fair_baseline_v2.py`), max softmax probability separates too.
+  Mean dispersion shifts ~3× more than mean confidence, but per-sample AUROC is 0.76 against
+  0.70. What does hold is that validation accuracy is blind: ~74% while true accuracy on the
+  corrupted stream is ~39%.
 - Mahalanobis and energy-based OOD baselines are cited but not yet compared against.
 - Failure conditions use 5 seeds against 10-seed references.
 - The paper PDF in this repo is the **superseded v1** and still contains the retracted claim.
@@ -116,7 +123,16 @@ This is an honest snapshot of a project mid-revision, not a finished paper.
 ├── evaluate_ref.py                # reference-band detection + calibrated zero-false-alarm k*
 ├── evaluate_onset.py              # detection delay after a mid-training onset
 ├── plot.py / plot_ref.py / plot_onset.py
-├── results/                       # 80+ runs: failures, clean controls, onset variants
+├── analysis/                      # verification suite and supporting studies (see analysis/README.md)
+│   ├── fair_baseline_v2.py        # measures every signal on the SAME corrupted stream
+│   ├── verify_claims.py           # 12 checks of this project's claims against its own runs
+│   ├── card_numbers.py            # recomputes every headline figure from results/
+│   ├── bench_geometry.py          # scaling cost of the geometry metrics
+│   ├── time_epoch.py              # real per-epoch wall clock and peak GPU memory
+│   └── rng_workers_demo.py        # DataLoader worker RNG bug in the shortcut condition
+├── REPRODUCE.md                   # full rebuild instructions, hardware, timings, pitfalls
+├── requirements-lock.txt          # exact pinned versions behind the committed numbers
+├── results/                       # 80 runs: failures, clean controls, onset variants
 └── figures/
 ```
 
@@ -133,6 +149,9 @@ pip install -r requirements.txt
 ```
 
 ## Usage
+
+Full rebuild instructions — hardware, exact versions, every command, measured
+timings and the pitfalls — are in **[REPRODUCE.md](REPRODUCE.md)**.
 
 The repo ships with all saved runs, so every table above reproduces **without retraining**:
 
